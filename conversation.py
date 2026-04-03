@@ -58,7 +58,8 @@ class ConversationManager:
         self.candidate = {}
         self.questions = []
         self.q_index = 0
-        self._client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        from llm_provider import LLMProvider
+        self.llm = LLMProvider()
 
     # ── Public interface ───────────────────────────────────────────────────────
 
@@ -234,13 +235,7 @@ class ConversationManager:
 
         for _ in range(3):
             try:
-                response = self._client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=512,
-                    system=system,
-                    messages=trimmed_history,
-                )
-                return response.content[0].text.strip()
+                return self.llm.generate(system, trimmed_history)
             except Exception:
                 continue
 
@@ -270,13 +265,7 @@ class ConversationManager:
         raw = ""
         for _ in range(3):
             try:
-                response = self._client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=800,
-                    system=system,
-                    messages=[{"role": "user", "content": f"Tech stack: {tech_stack_text}"}],
-                )
-                raw = response.content[0].text.strip()
+                raw = self.llm.generate(system, [{"role": "user", "content": tech_stack}])
                 break
             except Exception:
                 continue
