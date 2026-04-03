@@ -4,15 +4,16 @@ Core state machine for the TalentScout Hiring Assistant.
 Manages conversation stages, LLM API calls, and candidate data extraction.
 """
 
-import ast
+import json
 import os
 import re
 import anthropic
-from prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT, build_messages
+from prompts import STAGE_INSTRUCTIONS, SYSTEM_PROMPT
 from data_handler import (
     extract_email_from_text,
     extract_years_from_text,
     validate_email,
+    validate_phone,
     save_candidate,
     format_candidate_summary,
 )
@@ -77,6 +78,9 @@ class ConversationManager:
         Returns:
             Assistant response string.
         """
+        if len(user_input.strip()) < 2:
+            return "Could you please provide a bit more detail?"
+
         # Append user message to history
         self.history.append({"role": "user", "content": user_input})
 
@@ -228,48 +232,68 @@ class ConversationManager:
         # Keep history window manageable (last 20 messages)
         trimmed_history = self.history[-20:]
 
-        response = self._client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=512,
-            system=system,
-            messages=trimmed_history,
-        )
-        return response.content[0].text.strip()
+        for _ in range(3):
+            try:
+                response = self._client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=512,
+                    system=system,
+                    messages=trimmed_history,
+                )
+                return response.content[0].text.strip()
+            except Exception:
+                continue
+
+        return "Sorry, I'm having trouble responding right now. Please try again."
 
     def _generate_questions(self):
         """Call LLM to generate a list of technical questions for the candidate's stack."""
-        tech_stack = self.candidate.get("tech_stack", "Python")
+        tech_stack = self.candidate.get("tech_stack", ["Python"])
+        if isinstance(tech_stack, list):
+            tech_stack_text = ", ".join(tech_stack)
+        else:
+            tech_stack_text = str(tech_stack)
+
+        experience = self.candidate.get("experience", "0")
+        try:
+            exp_num = float(re.search(r"\d+(\.\d+)?", experience).group())
+        except Exception:
+            exp_num = 0
+
+        difficulty = "advanced" if exp_num >= 3 else "basic"
         instruction = STAGE_INSTRUCTIONS["generate_questions"].format(
             n=NUM_TECH_QUESTIONS,
-            tech_stack=tech_stack,
-        )
+            tech_stack=tech_stack_text,
+        ) + f"\nDifficulty level: {difficulty}"
         system = SYSTEM_PROMPT + "\n\nCURRENT TASK:\n" + instruction
 
-        response = self._client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=800,
-            system=system,
-            messages=[{"role": "user", "content": f"Tech stack: {tech_stack}"}],
-        )
-        raw = response.content[0].text.strip()
+        raw = ""
+        for _ in range(3):
+            try:
+                response = self._client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=800,
+                    system=system,
+                    messages=[{"role": "user", "content": f"Tech stack: {tech_stack_text}"}],
+                )
+                raw = response.content[0].text.strip()
+                break
+            except Exception:
+                continue
 
-        # Parse the Python list from the response
         try:
-            # Find the list in the response
-            match = re.search(r"\[.*?\]", raw, re.DOTALL)
-            if match:
-                self.questions = ast.literal_eval(match.group(0))
-            else:
-                # Fallback: split by newlines
-                self.questions = [
-                    line.strip().lstrip("0123456789.-) ")
-                    for line in raw.split("\n")
-                    if line.strip() and "?" in line
-                ][:NUM_TECH_QUESTIONS]
+            self.questions = json.loads(raw)
         except Exception:
             self.questions = [
-                f"Can you walk me through a challenging project where you used {tech_stack}?",
-                f"What are the most important best practices you follow when working with {tech_stack}?",
+                q.strip()
+                for q in raw.split("\n")
+                if "?" in q
+            ][:NUM_TECH_QUESTIONS]
+
+        if not self.questions:
+            self.questions = [
+                f"Can you walk me through a challenging project where you used {tech_stack_text}?",
+                f"What are the most important best practices you follow when working with {tech_stack_text}?",
                 "How do you approach debugging a production issue you've never seen before?",
                 "Describe your experience with version control and code review processes.",
                 "What's a technical concept you've had to explain to a non-technical stakeholder?",
@@ -308,7 +332,9 @@ class ConversationManager:
             self.candidate["desired_position"] = text_clean
 
         elif stage == "collect_techstack":
-            self.candidate["tech_stack"] = text_clean
+            self.candidate["tech_stack"] = [
+                tech.strip() for tech in text_clean.split(",") if tech.strip()
+            ]
 
     def _can_advance(self) -> bool:
         """
@@ -317,8 +343,10 @@ class ConversationManager:
         """
         stage = self.stage
         if stage == "collect_email":
-            # Only advance if we got a valid-looking email
-            return bool(self.candidate.get("email"))
+            return validate_email(self.candidate.get("email", ""))
+        if stage == "collect_phone":
+            phone = self.candidate.get("phone", "")
+            return phone == "Not provided" or validate_phone(phone)
         # All other stages: always advance after one response
         return True
 

@@ -6,7 +6,6 @@ Compliant with GDPR best-practice principles (minimal data, masked logs).
 
 import json
 import re
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +42,12 @@ def validate_email(email: str) -> bool:
     return bool(re.match(pattern, email.strip()))
 
 
+def validate_phone(phone: str) -> bool:
+    """Validate that the phone number contains at least 10 digits."""
+    digits = re.sub(r"\D", "", phone)
+    return len(digits) >= 10
+
+
 def extract_email_from_text(text: str) -> str | None:
     """Try to pull an email out of freeform text."""
     pattern = r"[\w\.\+\-]+@[\w\-]+\.[a-zA-Z]{2,}"
@@ -66,7 +71,7 @@ def save_candidate(data: dict) -> str:
     """
     ensure_data_dir()
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    name_slug = re.sub(r"\W+", "_", data.get("name", "unknown").lower())
+    name_slug = re.sub(r"\W+", "_", data.get("name", "candidate").lower()).strip("_") or "candidate"
     filename = DATA_DIR / f"{name_slug}_{ts}.json"
 
     # Build a privacy-safe record for storage
@@ -105,7 +110,10 @@ def format_candidate_summary(data: dict) -> str:
     if data.get("desired_position"):
         lines.append(f"**Desired Role:** {data['desired_position']}")
     if data.get("tech_stack"):
-        lines.append(f"**Tech Stack:** {data['tech_stack']}")
+        tech_stack = data["tech_stack"]
+        if isinstance(tech_stack, list):
+            tech_stack = ", ".join(tech_stack)
+        lines.append(f"**Tech Stack:** {tech_stack}")
     return "\n".join(lines)
 
 

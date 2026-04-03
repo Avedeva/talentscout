@@ -87,12 +87,14 @@ Current question number: {q_num} of {q_total}
 
 Instructions:
 - Ask ONE technical question at a time from the tech stack provided.
-- Questions should be practical, intermediate-to-advanced level.
+- Questions should be practical, real-world, and scenario-based.
+- Avoid textbook definitions. Focus on how the candidate thinks.
 - Vary across the different technologies listed.
 - After the candidate answers, give a brief neutral acknowledgment (don't grade them).
 - Then ask the next question OR wrap up if done.
 - Do NOT repeat questions already asked.
 - Keep questions open-ended (not yes/no).
+- Mentally assess the candidate's response quality but do not reveal scoring.
 """,
 
     "generate_questions": """
@@ -100,9 +102,11 @@ Generate {n} technical interview questions for a candidate with this tech stack:
 
 Rules:
 - 1-2 questions per technology mentioned (spread evenly).
-- Questions should be practical and intermediate-to-advanced.
+- Questions should be practical, real-world, and scenario-based.
+- Avoid textbook definitions. Focus on how the candidate thinks.
 - Open-ended, not trivia or yes/no.
-- Return ONLY a Python list of strings, like:
+- Return ONLY a JSON array of strings.
+- Example:
   ["Question 1?", "Question 2?", "Question 3?"]
 - No preamble, no numbering outside the list, no explanation.
 """,
